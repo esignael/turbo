@@ -1,10 +1,53 @@
+// Copyright 2021 Pierre Talbot, Frédéric Pinel
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//     http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef CONSTRAINT_HPP
+#define CONSTRAINT_HPP
+
+class Constraint {
+  virtual std::vector<GuardedCommands> tell() const = 0;
+  virtual std::unique_ptr<Ask> ask() const = 0;
+  virtual std::unique_ptr<Constraint> neg() const = 0;
+}
+
+// x + y <= c
+class TemporalConstraint: public Constraint {
+  // bool positive_x;
+  std::string x;
+  // bool negative_x;
+  std::string y;
+  int c;
+
+  std::vector<GuardedCommands> tell() const {
+    auto  = ;
+    auto c = ;
+    auto c1 = make_true_gc(std::make_unique<TellInterval>(var,
+      std::make_unique<LB>(x),
+      std::make_unique<TellAnd>("-",
+        std::make_unique<IntConstant>(c),
+        std::make_unique<LB>(y)));)
+  }
+}
+
+#endif
 
 // I. x + y <= c
 
 //  ==> (tell)
 
-// (ub(x) + ub(y) > c) => x <- [lb(x)..c - lb(y)]
-// (ub(x) + ub(y) > c) => y <- [lb(y)..c - lb(x)]
+// true => x <- [lb(x)..c - lb(y)]
+// true => y <- [lb(y)..c - lb(x)]
 
 //  ==> (not)
 
@@ -31,7 +74,13 @@
 // ask(c1)
 // ask(c2)
 
-// III. c1 /\ c2 (similar to c1 /\ c2)
+// III. c1 /\ c2
+
+//    ==> (tell)
+//  true => c1
+//  true => c2
+
+//
 
 // IV. b <=> c1
 

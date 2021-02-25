@@ -153,6 +153,59 @@ public:
     }
   }
 
+  // The node must have a very precise shape, X <= Y or X <= Y + k, otherwise a runtime_error is thrown.
+  Propagator* make_temporal_constraint_from_node(Node* node) {
+    if (node->type == OLE) {
+      if (node->parameters.size() != 2) {
+        throw std::runtime_error("Expected binary constraints.");
+      }
+      if (node->parameters[0]->type != OVAR) {
+        throw std::runtime_error("Expected variable on the lhs (in temporal constraint).");
+      }
+      std::string x = node->parameters[0]->toString();
+      if (node->parameters[1]->type == OVAR) {
+        std::string y = node->parameters[1]->toString();
+        return make_temporal_constraint(x, 0, LE, y);
+      }
+      else if (node->parameters[1]->type == OADD) {
+        Node* add = node->parameters[1];
+        if (add->parameters[0]->type != OVAR || add->parameters[1]->type != ODECIMAL) {
+          throw std::runtime_error("Expected <var> + <constant>.");
+        }
+        std::string y = add->parameters[0]->toString();
+        int k = dynamic_cast<NodeConstant*>(add->parameters[1])->val;
+        return make_temporal_constraint(x, -k, LE, y);
+      }
+      else {
+        std::cout << node->toString() << std::endl;
+        throw std::runtime_error("Expected rhs of type OADD or OVAR.");
+      }
+    }
+    else {
+      throw std::runtime_error("Expect node in canonized form. TemporalProp constraint of the form x <= y + k");
+    }
+  }
+
+  // void add_reified_constraint(Node* node) {
+  //   if (node->parameters[0]->type == OVAR &&
+  //       node->parameters[1]->type == OAND) {
+  //     std::string b = node->parameters[0]->toString();
+  //     NodeAnd* and_node = dynamic_cast<NodeAnd*>(node->parameters[1]);
+  //     Propagator* p1 = make_temporal_constraint_from_node(and_node->parameters[0]);
+  //     Propagator* p2 = make_temporal_constraint_from_node(and_node->parameters[1]);
+  //     Propagator* rhs = new LogicalAnd(p1, p2);
+  //     constraints.propagators.push_back(new ReifiedProp(std::get<0>(var2idx[b]), rhs));
+  //   }
+  //   else if (node->parameters[0]->type == OAND &&
+  //     node->parameters[1]->type == OVAR) {
+  //     std::swap(node->parameters[0], node->parameters[1]);
+  //     add_reified_constraint(node);
+  //   }
+  //   else {
+  //     throw std::runtime_error("Expected reified constraint of the form  b <=> (c1 /\\ c2)");
+  //   }
+  // }
+
   void constraint(Tree *tree) {
     if (tree->arity() == 1) {
       strengthen_domain_from_node(tree->root);
