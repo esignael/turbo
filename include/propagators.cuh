@@ -43,6 +43,68 @@ CUDA_GLOBAL void init_logical_and(Propagator** p, int uid, Propagator* left, Pro
 CUDA_GLOBAL void init_reified_prop(Propagator** p, int uid, Var b, Propagator* rhs, Propagator* not_rhs);
 CUDA_GLOBAL void init_linear_ineq(Propagator** p, int uid, int n, const Var* vars, const int* constants, int max);
 
+
+/// x + y <= c
+template <typename X, typename Y, typename Z>
+class XPlusYleqZ: public Propagator {
+
+public:
+  const X x;
+  const Y y;
+  const Z z;
+
+  CUDA TemporalProp(X x, Y y, Z z):
+   Propagator(-1), x(x), y(y), z(z)
+  {
+    assert(x != 0 && y != 0);
+  }
+
+  CUDA ~TemporalProp() {}
+
+  CUDA bool propagate(VStore& vstore) const override {
+    bool has_changedX = x.update_ub(vstore, z.ub(vstore) - y.lb(vstore));
+    bool has_changedY = y.update_ub(vstore, z.ub(vstore) - x.lb(vstore));
+    bool has_changedZ = z.update_lb(vstore, x.lb(vstore) + y.lb(vstore));
+    return has_changedX || has_changedY || has_changedZ;
+  }
+
+  CUDA bool is_entailed(const VStore& vstore) const override {
+    return
+      !x.is_top(vstore) &&
+      !y.is_top(vstore) &&
+      !z.is_top(vstore) &&
+      x.ub(vstore) + y.ub(vstore) <= z.lb(vstore);
+  }
+
+  CUDA bool is_disentailed(const VStore& vstore) const override {
+    return x.is_top(vstore) ||
+           y.is_top(vstore) ||
+           z.is_top(vstore) ||
+           x.lb(vstore) + y.lb(vstore) > z.ub(vstore);
+  }
+
+  Propagator* neg() const {
+    return new TemporalProp<X::neg_type, Y::neg_type, Add<Z::neg_type>>
+      (x.neg(), y.neg(), Add(z.neg(), -1));
+  }
+
+  CUDA void print(const VStore& vstore) const override {
+    printf("%d: ", uid);
+    vstore.print_var(x);
+    printf(" + ");
+    vstore.print_var(y);
+    printf(" <= %d", c);
+  }
+
+  Propagator* to_device() const override {
+    Propagator** p;
+    malloc2_managed(p, 1);
+    init_temporal_prop<<<1, 1>>>(p, uid, x, y, c);
+    CUDIE(cudaDeviceSynchronize());
+    return *p;
+  }
+};
+
 /// x + y <= c
 class TemporalProp: public Propagator {
 
@@ -264,47 +326,124 @@ public:
   }
 };
 
-// x1c1 + ... + xNcN <= max
-class LinearIneq: public Propagator {
+template <typename T>
+static T* from_vec(std::vector<T> a) {
+  T* b;
+  malloc2_managed(b, a.size());
+  for(int i = 0; i < a.size(); ++i) {
+    b[i] = a[i];
+  }
+  return b;
+}
+
+template <typename T>
+static T* from_ptr(const T* a, int n) {
+  T* b;
+  malloc2_managed(b, n);
+  for(int i = 0; i < n; ++i) {
+    b[i] = a[i];
+  }
+  return b;
+}
+
+// x1 + ... + xN <= max
+template<typename T, typename U>
+class Sum: public Propagator {
+  const int n;
+  const T* terms;
+  const U::neg_type max; // x1 + ... + xN - max <= 0
 public:
+  Sum(std::vector<T> terms, U max):
+    Propagator(-1), n(terms.size()), max(max.neg()), terms(from_vec(terms))
+  {}
+
+  CUDA Sum(int n, const T* terms, U max):
+    Propagator(-1), n(n), max(max.neg()), terms(terms)
+  {}
+
+  CUDA ~Sum() {
+    free2((void*)terms);
+  }
+
+  CUDA Interval sum(VStore& vstore) {
+    Interval s = {max.lb(vstore), max.ub(vstore)};
+    for(int i = 0; i < n; ++i) {
+      s.lb += terms[i].lb(vstore);
+      s.ub += terms[i].ub(vstore);
+    }
+    return s;
+  }
+
+
+    bool has_changed = vstore.update_ub(x, c - vstore.lb(y));
+    has_changed |= vstore.update_ub(y, c - vstore.lb(x));
+
+  CUDA bool propagate(VStore& vstore) const override {
+    Interval s = sum(vstore);
+    bool has_changed = false;
+    for(int i = 0; i < n; ++i) {
+      int ub = s.lb - terms[i].lb(vstore);
+      has_changed |= terms[i].update_ub(vstore, ub >= 0 ? -ub : ub);
+    }
+    int ub = s.lb - max.lb(vstore);
+    has_changed |= max.update_ub(vstore, ub >= 0 ? -ub : ub);
+    return has_changed;
+  }
+
+  CUDA bool one_top(const VStore& vstore) const {
+    if(max.is_top(vstore)) {
+      return true;
+    }
+    for(int i = 0; i < n; ++i) {
+      if(terms[i].is_top(vars[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // From the diagram above, it is clear that once `potential <= slack` holds, it holds forever in a non-top `vstore`.
+  // So even if `vstore` is modified during or between the computation of the potential or slack.
+  CUDA bool is_entailed(const VStore& vstore) const override {
+    return !one_top(vstore) && sum(vstore).ub <= 0;
+  }
+
+  CUDA bool is_disentailed(const VStore& vstore) const override {
+    return one_top(vstore) || sum(vstore).lb > 0;
+  }
+
+  CUDA void print(const VStore& vstore) const override {
+    printf("%d: ", uid);
+    for(int i = 0; i < n; ++i) {
+      terms[i].print(vstore);
+      if (i != n-1) printf(" + ");
+    }
+    printf(" <= ");
+    max.neg().print(vstore);
+  }
+
+}
+
+// x1c1 + ... + xNcN <= max where xi = [0..1].
+class PseudoBoolean: public Propagator {
   const int n;
   const Var* vars;
   const int* constants;
   const int max;
-
-  template <typename T>
-  static T* from_vec(std::vector<T> a) {
-    T* b;
-    malloc2_managed(b, a.size());
-    for(int i = 0; i < a.size(); ++i) {
-      b[i] = a[i];
-    }
-    return b;
-  }
-
-  template <typename T>
-  static T* from_ptr(const T* a, int n) {
-    T* b;
-    malloc2_managed(b, n);
-    for(int i = 0; i < n; ++i) {
-      b[i] = a[i];
-    }
-    return b;
-  }
-
-  LinearIneq(std::vector<Var> vvars, std::vector<int> vconstants, int max):
+public:
+  PseudoBoolean(std::vector<Var> vvars, std::vector<int> vconstants, int max):
     Propagator(-1), n(vvars.size()), max(max), vars(from_vec(vvars)),
     constants(from_vec(vconstants))
   {
     assert(vvars.size() == vconstants.size());
   }
 
-  CUDA LinearIneq(int n, const Var* vars, const int* constants, int max):
+  CUDA PseudoBoolean(int n, const Var* vars, const int* constants, int max):
     Propagator(-1), n(n), max(max), vars(vars),
     constants(constants)
   {}
 
-  CUDA ~LinearIneq() {
+  CUDA ~PseudoBoolean() {
     free2((void*)vars);
     free2((void*)constants);
   }
@@ -377,7 +516,7 @@ public:
   CUDA bool is_disentailed(const VStore& vstore) const {
     bool disentailed = one_top(vstore) || slack(vstore) < 0;
     LOG(if(disentailed) {
-      printf("LinearIneq disentailed %d: %d < 0\n", uid, slack(vstore));
+      printf("PseudoBoolean disentailed %d: %d < 0\n", uid, slack(vstore));
     })
     return disentailed;
   }
