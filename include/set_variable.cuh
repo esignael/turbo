@@ -31,11 +31,11 @@ struct SetVariable {
 
    CUDA SetVariable () { ub.complement(); }
 
-   CUDA SetVariable (Bitset<array_size> l, Bitset<array_size> u): lb(l), ub(u) {}
+   CUDA SetVariable (const Bitset<array_size> &l, const Bitset<array_size> &u): lb(l), ub(u) {}
 
    CUDA void inplace_join (SetVariable const &other) {
-      lb = lb.set_intersection(other.lb);
-      ub = ub.set_union(other.ub);
+      lb = lb.set_union(other.lb);
+      ub = ub.set_intersection(other.ub);
    }
 
    CUDA bool is_assigned () const {
@@ -57,6 +57,7 @@ struct SetVariable {
    }
 
    CUDA bool is_neq (SetVariable const &other) {
+      //TODO
       return lb.is_neq(other.lb) || ub.is_neq(other.ub);
    }
 };

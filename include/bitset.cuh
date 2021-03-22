@@ -51,10 +51,12 @@ struct Bitset: public Managed {
 
    //CUDA ~Bitset (){}
 
+   // v copy constructor
    CUDA Bitset(Bitset const &other): n(other.n), set() {
       memcpy(set, other.set, n);
    }
 
+   // v same as copy (for most part)
    CUDA Bitset& operator = (Bitset const &other) {
       if (this != &other) {
          memcpy(this, &other, sizeof(Bitset));
@@ -66,6 +68,7 @@ struct Bitset: public Managed {
       // if x is not in bounds, 
       int bound = element_size * n / 2;
       bound = (x >= -bound) & (x < bound);
+      //TODO: ^ make assersion here
       int bound_mask = (bound << (element_size - 1)) >> (element_size -1);
       // bound_mask will turn the assignment to set[0] |= 0, hence not changing anything
 
@@ -123,6 +126,8 @@ struct Bitset: public Managed {
    }
 
    CUDA bool is_subset_of (Bitset const &other) const {
+      return 
+      // TODO: make it simpler
       int inter = 0;
       for(int i=0;(inter == 0) && (i < n);++i){
          inter = other.set[i] ^ set[i];
@@ -133,13 +138,15 @@ struct Bitset: public Managed {
 
    CUDA bool is_equiv (Bitset const &other) const {
       int i = 0;
-      for(;(set[i] == other.set[i]) && (i <= n); ++i){}
+      for(;(set[i] == other.set[i]) && (i < n); ++i){}
       return set[i] == other.set[i];
    }
 
    CUDA bool is_neq (Bitset const &other) const {
+      return !is_equiv(other);
+      // TODO: make it simpler
       int i = 0;
-      for(;(set[i] == other.set[i]) && (i <= n); ++i){}
+      for(;(set[i] == other.set[i]) && (i < n); ++i){}
       return set[i] != other.set[i];
    }
 
@@ -180,12 +187,13 @@ struct Bitset: public Managed {
 
    CUDA Bitset set_intersection (Bitset const &x) const {
       Bitset ret;
-      for(int i=0;i <= n; ++i){
+      for(int i=0;i < n; ++i){
          ret.set[i] = x.set[i] & set[i];
       }
       return ret;
    }
 
+   //TODO: with return value
    CUDA void complement() {
       for (int i=0; i < n; ++i) {
          set[i] = ~set[i];
