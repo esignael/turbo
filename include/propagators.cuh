@@ -450,4 +450,22 @@ struct Constraints {
   }
 };
 
+// X in Y
+
+template<typename single, typename setdom>
+class Member: public Propagator {
+public:
+   const setdom element;
+   const setdom set;
+
+   CUDA bool propagate (VStore& vstore) const override {
+      if (x.ub(vstore) == x.lb(vstore)) {
+         return set.update_lb(vstore, x.lb(vstore));
+      }
+      // TODO: implement the bound minimization for x
+      return true;
+   }
+};
+
+
 #endif

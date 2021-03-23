@@ -24,7 +24,7 @@ int main () {
    Bitset<40> *a = new Bitset<40>;
    Bitset<40> *b = new Bitset<40>;
    for(int i=0;i<400;++i){a->add(i); }
-   for(int i=-100;i<0;++i){b->add(i); }
+   for(int i=-100;i<-32;++i){b->add(i); }
    /*
    a.add(1);
    a.add(-1);
@@ -53,7 +53,10 @@ int main () {
    Bitset<40> c;
    c = b->diff(*a);
    printf("===========   C  ============");
+   //c.add(-32);
+   c.alt_add(0);
    c.print();
+   c.upper_bound();
    
    return 0;
 };

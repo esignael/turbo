@@ -24,23 +24,9 @@
 
 // A variable with a negative index represents the negation `-x`.
 // The conversion is automatically handled in `VStore::view_of`.
-class Managed {
-public:
-  void *operator new(size_t len) {
-    void *ptr;
-    cudaMallocManaged(&ptr, len);
-    cudaDeviceSynchronize();
-    return ptr;
-  }
-
-  void operator delete(void *ptr) {
-    cudaDeviceSynchronize();
-    cudaFree(ptr);
-  }
-};
 
 template <size_t array_size>
-struct Bitset: public Managed {
+struct Bitset {
    int set[array_size];
    size_t n;
 
@@ -62,6 +48,37 @@ struct Bitset: public Managed {
          memcpy(this, &other, sizeof(Bitset));
       }
       return *this;
+   }
+
+   CUDA void alt_add (int x) {
+      int bound = element_size * n / 2;
+      assert(x >= -bound && x < bound);
+
+      int bit_index = (32 + (x % 32)) % 32;
+      int row_index = (39 + ((x + 32 - bit_index) / 32)) % 40;
+
+      set[row_index] |= 1 << bit_index;
+   }
+
+   CUDA void alt_remove (int x) {
+      int bound = element_size * n / 2;
+      assert(x >= -bound && x < bound);
+
+      int bit_index = (32 + (x % 32)) % 32;
+      int row_index = (39 + ((x + 32 - bit_index) / 32)) % 40;
+
+      // Could be changed to xor if 'x' is known to be in set
+      set[row_index] &= ~(1 << bit_index);
+   }
+
+   CUDA bool alt_contains (int x) {
+      int bound = element_size * n / 2;
+      assert(x >= -bound && x < bound);
+
+      int bit_index = (32 + (x % 32)) % 32;
+      int row_index = (39 + ((x + 32 - bit_index) / 32)) % 40;
+
+      return set[row_index] & (1 << bit_index);
    }
 
    CUDA void add (int x) {
@@ -126,7 +143,6 @@ struct Bitset: public Managed {
    }
 
    CUDA bool is_subset_of (Bitset const &other) const {
-      return 
       // TODO: make it simpler
       int inter = 0;
       for(int i=0;(inter == 0) && (i < n);++i){
@@ -207,9 +223,42 @@ struct Bitset: public Managed {
             if (!(i % 8)) { printf("|"); }
             printf("%d",1 & (set[j] >> i));
          }
-         printf("\n");
+         printf("|\n");
       }
    }
+
+   CUDA int upper_bound() const {
+      // only works for 40 (and for even numbered arrays)
+      int i = 19;
+      for (int j=0; j < n; ++j) {
+         if (i == -1) { i = 39;}
+         //if (set[i] == 0) { --i; continue; }
+         for (int s=1; s <= element_size; ++s) {
+            if(set[i] & (1 << (element_size - s))) {
+               //printf("\nresult: %i", j);
+               printf("\ns result: %i", s);
+               printf("\ni result: %i", i);
+               printf("\nresult: %i", element_size*(20-j)-s);
+               int sol = element_size * (20-j)-s;
+               printf("\nbit index: %i", (32 + (sol % 32))%32);
+               printf("\nrow index: %i", (39 + ((sol + s) / 32)) % 40);
+               return element_size * (20 - j) - s;
+            }
+         }
+         --i;
+
+      }
+         printf("%i, ", i);
+   }
+
+   CUDA int interval() const {
+      int ub, lb;
+      for (int j=0; j < n / 2; ++j) {
+
+      }
+
+   }
+
 };
 
 #endif
