@@ -28,9 +28,6 @@
 
 __device__ int decomposition = 0;
 
-#define OR_NODES 48
-#define AND_NODES 256
-#define SUB_PROBLEMS_POWER 12 // 2^N
 // #define SHMEM_SIZE 65536
 #define SHMEM_SIZE 44000
 
@@ -44,7 +41,9 @@ CUDA_GLOBAL void search_k(
     Pointer<Interval>* best_bound,
     Array<VStore>* best_sols,
     Var minimize_x,
-    Array<Statistics>* blocks_stats)
+    Array<Statistics>* blocks_stats,
+    int subproblems_power,
+    bool* stop)
 {
   #ifndef IN_GLOBAL_MEMORY
     extern __shared__ int shmem[];
@@ -55,11 +54,11 @@ CUDA_GLOBAL void search_k(
   int stride = blockDim.x;
   __shared__ int curr_decomposition;
   __shared__ int decomposition_size;
-  int sub_problems = pow(2, SUB_PROBLEMS_POWER);
+  int subproblems = pow(2, subproblems_power);
 
   if (tid == 0) {
-    decomposition_size = SUB_PROBLEMS_POWER;
-    INFO(printf("decomposition = %d, %d\n", decomposition_size, sub_problems));
+    decomposition_size = subproblems_power;
+    INFO(printf("decomposition = %d, %d\n", decomposition_size, subproblems));
     #ifdef IN_GLOBAL_MEMORY
       GlobalAllocator allocator;
     #else
@@ -70,9 +69,9 @@ CUDA_GLOBAL void search_k(
     curr_decomposition = atomicAdd(&decomposition, 1);
   }
   __syncthreads();
-  while(curr_decomposition < sub_problems) {
+  while(curr_decomposition < subproblems && !(*stop)) {
     INFO(if(tid == 0) printf("Block %d with decomposition %d.\n", nodeid, curr_decomposition));
-    (*trees)[nodeid]->search(tid, stride, *root, curr_decomposition, decomposition_size);
+    (*trees)[nodeid]->search(tid, stride, *root, curr_decomposition, decomposition_size, *stop);
     if (tid == 0) {
       Statistics latest = (*trees)[nodeid]->statistics();
       if(latest.best_bound != -1 && latest.best_bound < (*blocks_stats)[nodeid].best_bound) {
@@ -90,23 +89,18 @@ CUDA_GLOBAL void search_k(
 
 // Inspired by https://stackoverflow.com/questions/39513830/launch-cuda-kernel-with-a-timeout/39514902
 // Timeout expected in seconds.
-void guard_timeout(int timeout, bool& stop, Statistics& statistics, Array<Statistics>& blocks_stats) {
+void guard_timeout(int timeout, bool& stop) {
   int progressed = 0;
   while (!stop) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     progressed += 1;
     if (progressed >= timeout) {
-      for(int i = 0; i < blocks_stats.size(); ++i) {
-        statistics.join(blocks_stats[i]);
-      }
-      statistics.exhaustive = false;
-      cudaDeviceReset();
       stop = true;
     }
   }
 }
 
-void solve(VStore* vstore, Constraints constraints, Var minimize_x, int timeout)
+void solve(VStore* vstore, Constraints constraints, Var minimize_x, Configuration config)
 {
   // INFO(constraints.print(*vstore));
   Array<Var>* branching_vars = constraints.branching_vars();
@@ -126,31 +120,33 @@ void solve(VStore* vstore, Constraints constraints, Var minimize_x, int timeout)
 
   t1 = std::chrono::high_resolution_clock::now();
 
-  Array<Pointer<TreeAndPar>>* trees = new(managed_allocator) Array<Pointer<TreeAndPar>>(OR_NODES);
+  Array<Pointer<TreeAndPar>>* trees = new(managed_allocator) Array<Pointer<TreeAndPar>>(config.or_nodes);
   Pointer<Interval>* best_bound = new(managed_allocator) Pointer<Interval>(Interval());
-  Array<VStore>* best_sols = new(managed_allocator) Array<VStore>(*vstore, OR_NODES);
-  Array<Statistics>* blocks_stats = new(managed_allocator) Array<Statistics>(OR_NODES);
+  Array<VStore>* best_sols = new(managed_allocator) Array<VStore>(*vstore, config.or_nodes);
+  Array<Statistics>* blocks_stats = new(managed_allocator) Array<Statistics>(config.or_nodes);
 
+  bool* stop = new(managed_allocator) bool(false);
   // cudaFuncSetAttribute(search_k, cudaFuncAttributeMaxDynamicSharedMemorySize, SHMEM_SIZE);
-  int and_nodes = min((int)props->size(), AND_NODES);
-  search_k<<<OR_NODES, and_nodes
+  int and_nodes = min((int)props->size(), config.and_nodes);
+  search_k<<<config.or_nodes, and_nodes
     #ifndef IN_GLOBAL_MEMORY
       , SHMEM_SIZE
     #endif
-  >>>(trees, vstore, props, branching_vars, best_bound, best_sols, minimize_x, blocks_stats);
+  >>>(trees, vstore, props, branching_vars, best_bound, best_sols, minimize_x, blocks_stats, config.subproblems_power, stop);
 
-  Statistics statistics;
-  bool stop = false;
-  std::thread timeout_thread(guard_timeout, timeout, std::ref(stop), std::ref(statistics), std::ref(*blocks_stats));
+  std::thread timeout_thread(guard_timeout, config.timeout, std::ref(*stop));
   CUDIE(cudaDeviceSynchronize());
-  stop = true;
+  *stop = true;
 
   t2 = std::chrono::high_resolution_clock::now();
   duration = std::chrono::duration_cast<std::chrono::milliseconds>( t2 - t1 ).count();
 
   timeout_thread.join();
 
-  // Gather statistics and best bound.
+  Statistics statistics;
+  for(int i = 0; i < blocks_stats->size(); ++i) {
+    statistics.join((*blocks_stats)[i]);
+  }
   GlobalStatistics gstats(vstore->size(), constraints.size(), duration, statistics);
   gstats.print();
 
