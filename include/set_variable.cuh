@@ -26,24 +26,24 @@
 // The conversion is automatically handled in `VStore::view_of`.
 
 template <size_t array_size>
-struct SetVariable {
+struct SetInterval{
    Bitset<array_size> lb, ub;
 
-   CUDA SetVariable () { ub.complement(); }
+   CUDA SetInterval () { ub.complement(); }
 
-   CUDA SetVariable (const Bitset<array_size> &l, const Bitset<array_size> &u): lb(l), ub(u) {}
+   CUDA SetInterval (const Bitset<array_size> &l, const Bitset<array_size> &u): lb(l), ub(u) {}
 
-   CUDA void inplace_join (SetVariable const &other) {
+   CUDA void inplace_join (SetInterval const &other) {
       lb = lb.set_union(other.lb);
       ub = ub.set_intersection(other.ub);
    }
 
    CUDA bool is_assigned () const {
-      return lb.is_equiv(ub);
+      return lb == ub;
    }
 
    CUDA bool is_top () const {
-      return lb.is_superset_of(ub) && lb.is_neq(ub);
+      return lb > ub;
    }
 
    CUDA void complement () { 
@@ -52,13 +52,12 @@ struct SetVariable {
       lb = temp;
    }
 
-   CUDA bool is_eq (SetVariable const &other) {
-      return lb.is_equiv(other.lb) && ub.is_equiv(other.ub);
+   CUDA bool operator == (const SetInterval& other) const {
+      return lb == other.lb && ub.other.ub;
    }
 
-   CUDA bool is_neq (SetVariable const &other) {
-      //TODO
-      return lb.is_neq(other.lb) || ub.is_neq(other.ub);
+   CUDA bool operator != (const SetInterval& other) const {
+      return lb != other.lb || ub != other.ub;
    }
 };
 

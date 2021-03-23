@@ -455,17 +455,30 @@ struct Constraints {
 template<typename single, typename setdom>
 class Member: public Propagator {
 public:
-   const setdom element;
+   const single x;
    const setdom set;
 
    CUDA bool propagate (VStore& vstore) const override {
       if (x.ub(vstore) == x.lb(vstore)) {
          return set.update_lb(vstore, x.lb(vstore));
       }
-      // TODO: implement the bound minimization for x
-      return true;
+      return x.update_lb(vstore, set.min()) | 
+             x.update_ub(vstore, set.max());
    }
 };
 
+class NotMember: public Propagator {
+public: 
+   const TypeX x;
+   const TypeY y;
+
+   CUDA bool propagate (VStore& vstore) const override {
+      if (x.ub(vstore) == x.lb(vstore)) {
+         return set.update_ub(vstore, x.lb(vstore));
+      }
+      return x.update_lb(vstore, set.min()) | 
+             x.update_ub(vstore, set.max());
+   }
+};
 
 #endif

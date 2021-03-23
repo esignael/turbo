@@ -25,21 +25,20 @@
 // A variable with a negative index represents the negation `-x`.
 // The conversion is automatically handled in `VStore::view_of`.
 
-template <size_t array_size>
+template <size_t n>
 struct Bitset {
-   int set[array_size];
-   size_t n;
+   int set[n * 2];
 
-   const int set_size = sizeof(int) * CHAR_BIT;
-   const int element_size = sizeof(int) * CHAR_BIT;
+   const int n2 = n * 2;
+   const int m = sizeof(int) * CHAR_BIT;
 
-   CUDA Bitset (): n(array_size), set(){}
+   CUDA Bitset (): set(){}
 
    //CUDA ~Bitset (){}
 
    // v copy constructor
-   CUDA Bitset(Bitset const &other): n(other.n), set() {
-      memcpy(set, other.set, n);
+   CUDA Bitset(Bitset const &other): set() {
+      memcpy(set, other.set, n2);
    }
 
    // v same as copy (for most part)
@@ -50,125 +49,73 @@ struct Bitset {
       return *this;
    }
 
-   CUDA void alt_add (int x) {
-      int bound = element_size * n / 2;
+   CUDA void add (int x) {
+      int bound = m * n;
       assert(x >= -bound && x < bound);
 
-      int bit_index = (32 + (x % 32)) % 32;
-      int row_index = (39 + ((x + 32 - bit_index) / 32)) % 40;
+      int bit_index = (m + (x % m)) % m;
+      int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
 
       set[row_index] |= 1 << bit_index;
    }
 
-   CUDA void alt_remove (int x) {
-      int bound = element_size * n / 2;
+   CUDA void remove (int x) {
+      int bound = m * n;
       assert(x >= -bound && x < bound);
 
-      int bit_index = (32 + (x % 32)) % 32;
-      int row_index = (39 + ((x + 32 - bit_index) / 32)) % 40;
+      int bit_index = (m + (x % m)) % m;
+      int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
 
       // Could be changed to xor if 'x' is known to be in set
       set[row_index] &= ~(1 << bit_index);
    }
 
-   CUDA bool alt_contains (int x) {
-      int bound = element_size * n / 2;
+   CUDA bool contains (int x) {
+      int bound = m * n;
       assert(x >= -bound && x < bound);
 
-      int bit_index = (32 + (x % 32)) % 32;
-      int row_index = (39 + ((x + 32 - bit_index) / 32)) % 40;
+      int bit_index = (m + (x % m)) % m;
+      int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
 
       return set[row_index] & (1 << bit_index);
    }
 
-   CUDA void add (int x) {
-      // if x is not in bounds, 
-      int bound = element_size * n / 2;
-      bound = (x >= -bound) & (x < bound);
-      //TODO: ^ make assersion here
-      int bound_mask = (bound << (element_size - 1)) >> (element_size -1);
-      // bound_mask will turn the assignment to set[0] |= 0, hence not changing anything
-
-      // if x is negative,
-      int sign_mask = ((x < 0) << (element_size - 1)) >> (element_size -1);
-      int f = ((element_size * n) & sign_mask) + x;
-      // f will give the 2's comp, depending on the size of the this->set
-
-      int array_index = f / set_size;
-      int bit_index = f % set_size;
-
-      set[array_index & bound_mask] |= (1 << bit_index) & bound_mask;
+   CUDA bool operator == (const Bitset& other) const {
+      for (int i=0; i<n2;++i) {
+         if (set[i] != other.set[i]) { return false; }
+      } return true;
    }
 
-   CUDA void remove (int x) {
-      int bound = element_size * n / 2;
-      bound = (x >= -bound) & (x < bound);
-      int bound_mask = (bound << (element_size - 1)) >> (element_size -1);
-      // bound_mask will turn the assignment to set[0] &= 1, hence not changing anything
-
-      // if x is negative,
-      int sign_mask = ((x < 0) << (element_size - 1)) >> (element_size -1);
-      int f = ((element_size * n) & sign_mask) + x;
-      // f will give the 2's comp, depending on the size of the this->set
-
-      int array_index = f / set_size;
-      int bit_index = f % set_size;
-
-      set[array_index & bound_mask] &= ~(1 << bit_index) | (~bound_mask);
+   CUDA bool operator != (const Bitset& other) const {
+      return !(*this == other);
    }
 
-   CUDA bool contains (int x) const {
-      int bound = element_size * n / 2;
-      bound = (x >= -bound) & (x < bound);
-      int bound_mask = (bound << (element_size - 1)) >> (element_size -1);
-      // bound_mask will turn the assignment to set[0] &= 1, hence not changing anything
-
-      // if x is negative,
-      int sign_mask = ((x < 0) << (element_size - 1)) >> (element_size -1);
-      int f = ((element_size * n) & sign_mask) + x;
-      // f will give the 2's comp, depending on the size of the this->set
-
-      int array_index = f / set_size;
-      int bit_index = f % set_size;
-      return set[array_index & bound_mask] & ((1 << bit_index) & bound_mask);
-   }
-
-   CUDA bool is_superset_of (Bitset const &other) const {
+   CUDA bool operator >= (const Bitset& other) const {
+      bool temp = true;
       int inter = 0;
-      for(int i=0;(inter == 0) && (i < n);++i){
+      for (int i=0;i<n2;++i) {
          inter = other.set[i] ^ set[i];
          inter &= other.set[i];
+         temp &= (inter == 0);
       }
-      return inter == 0;
+      return temp;
    }
 
-   CUDA bool is_subset_of (Bitset const &other) const {
-      // TODO: make it simpler
-      int inter = 0;
-      for(int i=0;(inter == 0) && (i < n);++i){
-         inter = other.set[i] ^ set[i];
-         inter &= set[i];
-      }
-      return inter == 0;
+   CUDA bool operator < (const Bitset& other) const {
+      return !(*this >= other);
    }
 
-   CUDA bool is_equiv (Bitset const &other) const {
-      int i = 0;
-      for(;(set[i] == other.set[i]) && (i < n); ++i){}
-      return set[i] == other.set[i];
+   CUDA bool operator <= (const Bitset& other) const {
+      return other >= *this;
    }
 
-   CUDA bool is_neq (Bitset const &other) const {
-      return !is_equiv(other);
-      // TODO: make it simpler
-      int i = 0;
-      for(;(set[i] == other.set[i]) && (i < n); ++i){}
-      return set[i] != other.set[i];
+   CUDA bool operator > (const Bitset& other) const {
+      return other < *this;
    }
 
    CUDA int size() const {
       int ret = 0;
-      for (int i=0; i < n; ++i){ 
+      for (int i=0; i < n2; ++i){ 
          int inter = set[i];
          for(;inter != 0; ++ret){
             inter &= inter - 1;
@@ -179,20 +126,13 @@ struct Bitset {
 
     CUDA Bitset diff (Bitset const &other) const {
       Bitset res;
-      for (int i=0; i < n; ++i) {
+      for (int i=0; i < n2; ++i) {
          res.set[i] = ~(other.set[i] & set[i]);
          res.set[i] &= set[i];
       }
       return res;
    }
    
-   CUDA void cuda_difference (Bitset const &other) {
-      int i = threadIdx.x + (blockIdx.x) * blockDim.x;
-      int limit_mask = ((i < n) << (element_size - 1)) >> (element_size -1);
-      i &= limit_mask;
-      set[i] &= ~(other.set[i] & set[i] & limit_mask);
-   }
-
    CUDA Bitset set_union (Bitset const &x) const {
       Bitset ret;
       for(int i=0;i < n; ++i){
@@ -211,15 +151,15 @@ struct Bitset {
 
    //TODO: with return value
    CUDA void complement() {
-      for (int i=0; i < n; ++i) {
+      for (int i=0; i < n2; ++i) {
          set[i] = ~set[i];
       }
    }
 
    CUDA void print() const {
-      for (int j = 0;j < n; ++j){
+      for (int j = 0;j < n2; ++j){
          printf("%4d: ", j);
-         for (int i = 0; i < set_size; i++){
+         for (int i = 0; i < m; i++){
             if (!(i % 8)) { printf("|"); }
             printf("%d",1 & (set[j] >> i));
          }
@@ -227,36 +167,39 @@ struct Bitset {
       }
    }
 
-   CUDA int upper_bound() const {
-      // only works for 40 (and for even numbered arrays)
-      int i = 19;
-      for (int j=0; j < n; ++j) {
-         if (i == -1) { i = 39;}
-         //if (set[i] == 0) { --i; continue; }
-         for (int s=1; s <= element_size; ++s) {
-            if(set[i] & (1 << (element_size - s))) {
-               //printf("\nresult: %i", j);
-               printf("\ns result: %i", s);
-               printf("\ni result: %i", i);
-               printf("\nresult: %i", element_size*(20-j)-s);
-               int sol = element_size * (20-j)-s;
-               printf("\nbit index: %i", (32 + (sol % 32))%32);
-               printf("\nrow index: %i", (39 + ((sol + s) / 32)) % 40);
-               return element_size * (20 - j) - s;
+   CUDA int max() const {
+      int rel_i = n - 1;
+      for (int j=0; j < n2; ++j) {
+         if (rel_i == -1) { rel_i = n2-1;}
+         // Maybe for CPU
+         //if (set[rel_i] == 0) { --rel_i; continue; }
+         for (int s=1; s <= m; ++s) {
+            if(set[rel_i] & (1 << (m - s))) {
+               return m * (n - j) - s;
             }
          }
-         --i;
-
+         --rel_i;
       }
-         printf("%i, ", i);
+      return -n * m - 1;
+   }
+   
+   CUDA int min() const {
+      int rel_i = n;
+      for (int j=0;j<n2;++j) {
+         if (rel_i == n2) { rel_i = 0; }
+         for (int bit_i=0; bit_i < m;++bit_i) {
+            if (set[rel_i] & (1 << bit_i)) {
+               return m * (j - n) + bit_i;
+            }
+         }
+         ++rel_i;
+      }
+      return n * m;
    }
 
    CUDA int interval() const {
       int ub, lb;
-      for (int j=0; j < n / 2; ++j) {
-
-      }
-
+      return 0;
    }
 
 };

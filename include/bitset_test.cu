@@ -17,13 +17,12 @@ __global__ void kern (Bitset<array_size> &a) {
 
 template <size_t array_size>
 __global__ void diff_test (Bitset<array_size> &a, Bitset<array_size> &b) {
-   a.cuda_difference(b);
 }
 
 int main () {
-   Bitset<40> *a = new Bitset<40>;
-   Bitset<40> *b = new Bitset<40>;
-   for(int i=0;i<400;++i){a->add(i); }
+   Bitset<20> *a = new Bitset<20>;
+   Bitset<20> *b = new Bitset<20>;
+   for(int i=31;i<400;++i){a->add(i); }
    for(int i=-100;i<-32;++i){b->add(i); }
    /*
    a.add(1);
@@ -46,17 +45,19 @@ int main () {
    cudaDeviceSynchronize();
    diff_test<<<1,42>>>(*b, *a);
    cudaDeviceSynchronize();
+   printf("=========== B ============\n");
    b->print();
+   printf("=========== A ============\n");
    a->print();
-   printf("=========== B / A============");
+   printf("=========== B / A============\n");
    (b->diff(*a)).print();
-   Bitset<40> c;
+   Bitset<20> c;
    c = b->diff(*a);
-   printf("===========   C  ============");
-   //c.add(-32);
-   c.alt_add(0);
+   printf("===========   C  ============\n");
+   c.add(-32);
    c.print();
-   c.upper_bound();
+   c.max();
+   printf("min: %i\n", a->min());
    
    return 0;
 };
