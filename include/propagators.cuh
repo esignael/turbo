@@ -21,6 +21,7 @@
 #include "cuda_helper.hpp"
 #include "vstore.cuh"
 #include "terms.hpp"
+#include "set_variable.cuh"
 
 class Propagator {
 public:
@@ -452,20 +453,26 @@ struct Constraints {
 
 // X in Y
 
-template<typename single, typename setdom>
+template<size_t n>
 class Member: public Propagator {
 public:
-   const single x;
-   const setdom set;
+   const Interval x;
+   const SetInterval<n> set;
+
+   Member () {
+      set = SetInterval<20>;
+      x = {0, 0};
+   }
 
    CUDA bool propagate (VStore& vstore) const override {
-      if (x.ub(vstore) == x.lb(vstore)) {
-         return set.update_lb(vstore, x.lb(vstore));
+      if (x.ub == x.lb) {
+         return set.update_lb(x.lb);
       }
       return x.update_lb(vstore, set.min()) | 
              x.update_ub(vstore, set.max());
    }
 };
+/*
 
 class NotMember: public Propagator {
 public: 
@@ -473,12 +480,16 @@ public:
    const TypeY y;
 
    CUDA bool propagate (VStore& vstore) const override {
+      bool has_changed = false;
       if (x.ub(vstore) == x.lb(vstore)) {
          return set.update_ub(vstore, x.lb(vstore));
       }
+      has_changed |= y.contains(x.ub) && x.update_ub(x.ub--);
+      has_changed |= y.contains(x.ub) && x.update_ub(x.ub--);
+
       return x.update_lb(vstore, set.min()) | 
              x.update_ub(vstore, set.max());
    }
 };
-
+*/
 #endif

@@ -16,6 +16,7 @@
 #define TERMS_HPP
 
 #include "cuda_helper.hpp"
+#include "bitset.cuh"
 
 // NOTE: Bitwise OR and AND are necessary to avoid short-circuit of Boolean operators.
 
@@ -71,5 +72,19 @@ public:
   CUDA neg_type neg() const { return neg_type(*this); }
   CUDA void print(const VStore& vstore) const { vstore.print_var(idx); }
 };
+/*
+class SetVariable {
+   int idx;
+public:
+   CUDA SetVariable (int idx): idx(idx) { assert(idx > -1); }
 
+   CUDA bool update_lb (VStore& vstore, const Bitset& lb) const {
+      return vstore.update_lb(idx, lb);
+   }
+
+   CUDA bool update_ub (VStore& vstore, const Bitset& ub) const {
+      return vstore.update_ub(idx, ub);
+   }
+};
+*/
 #endif

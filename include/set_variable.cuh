@@ -59,6 +59,20 @@ struct SetInterval{
    CUDA bool operator != (const SetInterval& other) const {
       return lb != other.lb || ub != other.ub;
    }
+
+   // Temp
+
+   CUDA bool update_lb (const Bitset<array_size>& x) {
+      if (lb < x) {
+         lb = x;
+         return true;
+      }
+      return false;
+   }
+   CUDA bool update_lb (int x) {
+      if (lb.contains(x)) { return false; }
+      return true;
+   }
 };
 
 #endif
