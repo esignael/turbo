@@ -296,6 +296,7 @@ public:
   }
 };
 
+/*
 // x1c1 + ... + xNcN <= max
 class LinearIneq: public Propagator {
 public:
@@ -317,7 +318,9 @@ public:
 
   template<typename Allocator>
   __device__ LinearIneq(const Array<Var>& vars, const Array<int>& constants, int max, Allocator& allocator):
-    Propagator(-1), max(max), vars(vars, allocator),
+    Propagator(-1), 
+    max(max), 
+    vars(vars, allocator),
     constants(constants, allocator)
   {}
 
@@ -422,6 +425,7 @@ public:
     return p;
   }
 };
+*/
 
 struct Constraints {
   std::vector<Propagator*> propagators;
