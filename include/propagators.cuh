@@ -36,7 +36,9 @@ public:
   CUDA virtual void print(const VStore& vstore) const = 0;
   virtual Propagator* neg() const = 0;
   // This function is called from host, and copy the object on the device memory.
+
   virtual Propagator* to_device() const = 0;
+
   __device__ virtual Propagator* clone_in(SharedAllocator& allocator) const = 0;
 };
 
@@ -296,7 +298,6 @@ public:
   }
 };
 
-/*
 // x1c1 + ... + xNcN <= max
 class LinearIneq: public Propagator {
 public:
@@ -425,7 +426,6 @@ public:
     return p;
   }
 };
-*/
 
 struct Constraints {
   std::vector<Propagator*> propagators;
@@ -458,22 +458,48 @@ struct Constraints {
 // X in Y
 
 template<size_t n>
-class Member: public Propagator {
+class Member {
 public:
-   const Interval x;
-   const SetInterval<n> set;
+   Interval x;
+   SetInterval<n> set;
 
-   Member () {
-      set = SetInterval<20>;
-      x = {0, 0};
-   }
+   Member () {}
+   Member (Interval& x, SetInterval<n> set): x(x), set(set) {}
 
-   CUDA bool propagate (VStore& vstore) const override {
+   CUDA bool propagate () {
       if (x.ub == x.lb) {
          return set.update_lb(x.lb);
       }
-      return x.update_lb(vstore, set.min()) | 
-             x.update_ub(vstore, set.max());
+      return update_lb(x, set.lb.min()) |
+             update_ub(x, set.ub.max());
+   }
+
+   CUDA bool is_entailed () const {
+      bool temp = true;
+      for (int i = x.lb; i <= x.ub; ++i) {
+         temp &= set.lb.contains(i);
+      }
+      return temp;
+   }
+
+   CUDA bool is_disentailed () const {
+      bool temp = false;
+      for (int i = x.lb; i<=x.ub; ++i) {
+         temp |= set.ub.contains(i);
+      }
+      return !temp;
+   }
+
+   CUDA bool update_lb (Interval& x, int lb) {
+      if (set.ub.contains(x.lb)) { return false; }
+      ++x.lb;
+      return true; 
+   }
+
+   CUDA bool update_ub (Interval& x, int ub) {
+      if (set.ub.contains(x.ub)) { return false; }
+      --x.ub;
+      return true;
    }
 };
 /*

@@ -69,8 +69,10 @@ struct SetInterval{
       }
       return false;
    }
+
    CUDA bool update_lb (int x) {
       if (lb.contains(x)) { return false; }
+      lb.add(x);
       return true;
    }
 };

@@ -50,10 +50,17 @@ struct Bitset {
    }
 
    CUDA void add (int x) {
+   // |  checking if the given parameter is within the bounds of
+   // v  what the bitset can contain
       int bound = m * n;
       assert(x >= -bound && x < bound);
-
+   // the inner modulus is used to lower the value,
+   // the m addition is used to convert negative values to 
+   // positive ones, since after the initial modulus, |x| < m
+   // meaning x + m > 0. Taking the modulus a second time makes
+   // sure that if x > 0 then x < m.
       int bit_index = (m + (x % m)) % m;
+   // this is much harder to explain `:D
       int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
 
       set[row_index] |= 1 << bit_index;
@@ -70,9 +77,9 @@ struct Bitset {
       set[row_index] &= ~(1 << bit_index);
    }
 
-   CUDA bool contains (int x) {
+   CUDA bool contains (int x) const {
       int bound = m * n;
-      assert(x >= -bound && x < bound);
+      if (x >= -bound && x < bound) { return false; }
 
       int bit_index = (m + (x % m)) % m;
       int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
