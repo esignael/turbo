@@ -71,16 +71,11 @@ public:
   }
 
   CUDA bool is_entailed(const VStore& vstore) const override {
-    return
-      !x.is_top(vstore) &&
-      !y.is_top(vstore) &&
-      x.ub(vstore) + y.ub(vstore) <= c;
+    return x.ub(vstore) + y.ub(vstore) <= c;
   }
 
   CUDA bool is_disentailed(const VStore& vstore) const override {
-    return x.is_top(vstore) ||
-           y.is_top(vstore) ||
-           x.lb(vstore) + y.lb(vstore) > c;
+    return x.lb(vstore) + y.lb(vstore) > c;
   }
 
   Propagator* neg() const {
@@ -258,14 +253,13 @@ public:
 
   CUDA bool is_entailed(const VStore& vstore) const override {
     return
-         !vstore.is_top(b)
-     && ((vstore.ub(b) == 0 && rhs->is_disentailed(vstore))
+        ((vstore.ub(b) == 0 && rhs->is_disentailed(vstore))
       || (vstore.lb(b) == 1 && rhs->is_entailed(vstore)));
   }
 
   CUDA bool is_disentailed(const VStore& vstore) const override {
-    return vstore.is_top(b)
-     || (vstore.ub(b) == 0 && rhs->is_entailed(vstore))
+    return
+        (vstore.ub(b) == 0 && rhs->is_entailed(vstore))
      || (vstore.lb(b) == 1 && rhs->is_disentailed(vstore));
   }
 
@@ -362,6 +356,10 @@ public:
   CUDA bool propagate(VStore& vstore) const {
     int s = slack(vstore);
     bool has_changed = false;
+    if(s < 0) {
+      vstore.update_ub(vars[0], vstore.lb(vars[0]) - 1);
+      return has_changed;
+    }
     // CORRECTNESS: Even if the slack changes after its computation (or even when we are computing it), it does not hinder the correctness of the propagation.
     // The reason is that whenever `constants[i] > s` it will stay true for any slack s' since s > s' by def. of the function slack.
     for(int i=0; i < vars.size(); ++i) {
@@ -373,29 +371,18 @@ public:
     return has_changed;
   }
 
-  CUDA bool one_top(const VStore& vstore) const {
-    for(int i = 0; i < vars.size(); ++i) {
-      if(vstore.is_top(vars[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   // From the diagram above, it is clear that once `potential <= slack` holds, it holds forever in a non-top `vstore`.
   // So even if `vstore` is modified during or between the computation of the potential or slack.
   CUDA bool is_entailed(const VStore& vstore) const {
-    return
-         !one_top(vstore)
-      && potential(vstore) <= max;
+    return potential(vstore) <= max;
   }
 
   CUDA bool is_disentailed(const VStore& vstore) const {
-    bool disentailed = one_top(vstore) || slack(vstore) < 0;
+    return slack(vstore) < 0;
     // LOG(if(disentailed) {
     //   printf("LinearIneq disentailed %d: %d < 0\n", uid, slack(vstore));
     // })
-    return disentailed;
+    // return disentailed;
   }
 
   CUDA void print(const VStore& vstore) const {
