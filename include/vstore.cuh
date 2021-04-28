@@ -213,6 +213,8 @@ public:
     return update(i, {v, v});
   }
 
+  
+
   CUDA Interval& operator[](size_t i) {
     return data[i];
   }

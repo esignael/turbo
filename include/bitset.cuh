@@ -87,17 +87,17 @@ struct Bitset {
       return set[row_index] & (1 << bit_index);
    }
 
-   CUDA bool operator == (const Bitset& other) const {
+   CUDA bool operator == (Bitset const &other) const {
       for (int i=0; i<n2;++i) {
          if (set[i] != other.set[i]) { return false; }
       } return true;
    }
 
-   CUDA bool operator != (const Bitset& other) const {
+   CUDA bool operator != (Bitset const &other) const {
       return !(*this == other);
    }
 
-   CUDA bool operator >= (const Bitset& other) const {
+   CUDA bool operator >= (Bitset const &other) const {
       bool temp = true;
       int inter = 0;
       for (int i=0;i<n2;++i) {
@@ -108,15 +108,15 @@ struct Bitset {
       return temp;
    }
 
-   CUDA bool operator < (const Bitset& other) const {
+   CUDA bool operator < (Bitset const &other) const {
       return !(*this >= other);
    }
 
-   CUDA bool operator <= (const Bitset& other) const {
+   CUDA bool operator <= (Bitset const &other) const {
       return other >= *this;
    }
 
-   CUDA bool operator > (const Bitset& other) const {
+   CUDA bool operator > (Bitset const &other) const {
       return other < *this;
    }
 
