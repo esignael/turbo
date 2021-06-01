@@ -22,38 +22,51 @@
 #include <string>
 #include "cuda_helper.hpp"
 
-template <size_t n>
+template <size_t N>
 struct Bitset {
   // TODO \\
   // 1) Universe and Empty statics
   // 2) Reorganize the template
   // 3) Fix the complement method
-  int set[n * 2];
+  int set[N * 2];
 
-  const int n2 = n * 2;
+  const int N2 = N * 2;
   const int m = sizeof(int) * CHAR_BIT;
 
+  // Constructors
   CUDA Bitset (): set(){}
 
   //CUDA ~Bitset (){}
 
   // v copy constructor
-  CUDA Bitset(Bitset const &other): set() {
-    memcpy(set, other.set, n2);
+  CUDA Bitset(const Bitset<N>& other): set() {
+    memcpy(set, other.set, N2);
   }
 
   // v same as copy (for most part)
-  CUDA Bitset& operator = (Bitset const &other) {
+  CUDA Bitset<N>& operator = (const Bitset<N>& other) {
     if (this != &other) {
-      memcpy(this, &other, sizeof(Bitset));
+      memcpy(this, &other, sizeof(Bitset<N>));
     }
     return *this;
   }
+  // <<< 
 
+  // Static Functions
+  CUDA static Bitset<N> universe () {
+    return Bitset<N>().take_complement();
+  }
+
+  CUDA static Bitset<N> empty () {
+    return Bitset<N>();
+  }
+  // <<< 
+
+  // Set R Element Operations
   CUDA void add (int x) {
     // |  checking if the given parameter is within the bounds of
     // v  what the bitset can contain
-    int bound = m * n;
+    int bound = m * N;
     assert(x >= -bound && x < bound);
     // the inner modulus is used to lower the value,
     // the m addition is used to convert negative values to 
@@ -62,68 +75,64 @@ struct Bitset {
     // sure that if x > 0 then x < m.
     int bit_index = (m + (x % m)) % m;
     // this is much harder to explain `:D
-    int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
+    int row_index = (N2 - 1 + ((x + m - bit_index) / m)) % N2;
 
     set[row_index] |= 1 << bit_index;
   }
 
   CUDA void remove (int x) {
-    int bound = m * n;
-    assert(x >= -bound && x < bound);
-
+    int bound = m * N;
     int bit_index = (m + (x % m)) % m;
-    int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
-
-    // Could be changed to xor if 'x' is known to be in set
+    int row_index = (N2 - 1 + ((x + m - bit_index) / m)) % N2;
     set[row_index] &= ~(1 << bit_index);
   }
 
   CUDA bool contains (int x) const {
-    int bound = m * n;
-    if (x >= -bound && x < bound) { return false; }
-
+    int bound = m * N;
     int bit_index = (m + (x % m)) % m;
-    int row_index = (n2 - 1 + ((x + m - bit_index) / m)) % n2;
+    int row_index = (N2 - 1 + ((x + m - bit_index) / m)) % N2;
 
     return set[row_index] & (1 << bit_index);
   }
+  // <<< 
 
-  CUDA bool operator == (Bitset const &other) const {
-    for (int i=0; i<n2;++i) {
-      if (set[i] != other.set[i]) { return false; }
-    } return true;
-  }
-
-  CUDA bool operator != (Bitset const &other) const {
-    return !(*this == other);
-  }
-
-  CUDA bool operator >= (Bitset const &other) const {
-    bool temp = true;
-    int inter = 0;
-    for (int i=0;i<n2;++i) {
-      inter = other.set[i] ^ set[i];
-      inter &= other.set[i];
-      temp &= (inter == 0);
+  // Binary Operations
+  CUDA bool operator == (const Bitset<N>& rhs) const {
+    bool result = true;
+    for (int i = 0; i < N2; ++i) {
+      result &= (set[i] == rhs.set[i]);
     }
-    return temp;
+    return result;
   }
 
-  CUDA bool operator < (Bitset const &other) const {
-    return !(*this >= other);
+  CUDA bool operator != (const Bitset<N>& rhs) const {
+    return !(*this == rhs);
   }
 
-  CUDA bool operator <= (Bitset const &other) const {
-    return other >= *this;
+  CUDA bool operator >= (const Bitset<N>& rhs) const {
+    bool result = true;
+    for (int i = 0; i < N2; ++i) {
+      result &= (0 == (rhs.set[i] & (rhs.set[i] ^ set[i])));
+    }
+    return result;
   }
 
-  CUDA bool operator > (Bitset const &other) const {
-    return other < *this;
+  CUDA bool operator < (const Bitset<N>& rhs) const {
+    return !(*this >= rhs);
   }
+
+  CUDA bool operator <= (const Bitset<N>& rhs) const {
+    return rhs >= *this;
+  }
+
+  CUDA bool operator > (const Bitset<N>& rhs) const {
+    return rhs < *this;
+  }
+  // <<<
 
   CUDA int size() const {
     int ret = 0;
-    for (int i=0; i < n2; ++i){ 
+    for (int i=0; i < N2; ++i){ 
       int inter = set[i];
       for(;inter != 0; ++ret){
         inter &= inter - 1;
@@ -134,7 +143,7 @@ struct Bitset {
 
   CUDA Bitset diff (Bitset const &other) const {
     Bitset res;
-    for (int i=0; i < n2; ++i) {
+    for (int i=0; i < N2; ++i) {
       res.set[i] = ~(other.set[i] & set[i]);
       res.set[i] &= set[i];
     }
@@ -143,41 +152,46 @@ struct Bitset {
 
   CUDA Bitset set_union (Bitset const &x) const {
     Bitset ret;
-    for(int i=0;i < n; ++i){
+    for(int i=0;i < N; ++i){
       ret.set[i] = x.set[i] | set[i];
     }
     return ret;
   }
 
-  CUDA void union_with (const Bitset<n>& other) {
-    for (int i = 0; i < n; ++i) {
+  CUDA void union_with (const Bitset<N>& other) {
+    for (int i = 0; i < N2; ++i) {
       set[i] |= other.set[i];
     }
   }
 
   CUDA Bitset set_intersection (Bitset const &x) const {
     Bitset ret;
-    for(int i=0;i < n; ++i){
+    for(int i=0;i < N2; ++i){
       ret.set[i] = x.set[i] & set[i];
     }
     return ret;
   }
 
-  CUDA void intersection_with (const Bitset<n>& other) {
-    for (int i = 0; i < n; ++i) {
+  CUDA void intersection_with (const Bitset<N>& other) {
+    for (int i = 0; i < N2; ++i) {
       set[i] &= other.set[i];
     }
   }
 
-  //TODO: with return value
-  CUDA void complement() {
-    for (int i=0; i < n2; ++i) {
+  CUDA void take_complement() {
+    for (int i = 0; i < N2; ++i) {
       set[i] = ~set[i];
     }
   }
 
+  CUDA Bitset<N> complement() {
+    Bitset<N> result;
+    result.take_complement();
+    return result;
+  }
+
   CUDA void print() const {
-    for (int j = 0;j < n2; ++j){
+    for (int j = 0;j < N2; ++j){
       printf("%4d: ", j);
       for (int i = 0; i < m; i++){
         if (!(i % 8)) { printf("|"); }
@@ -188,40 +202,34 @@ struct Bitset {
   }
 
   CUDA int max() const {
-    int rel_i = n - 1;
-    for (int j=0; j < n2; ++j) {
-      if (rel_i == -1) { rel_i = n2-1;}
+    int rel_i = N - 1;
+    for (int j=0; j < N2; ++j) {
+      if (rel_i == -1) { rel_i = N2-1;}
       // Maybe for CPU
       //if (set[rel_i] == 0) { --rel_i; continue; }
       for (int s=1; s <= m; ++s) {
         if(set[rel_i] & (1 << (m - s))) {
-          return m * (n - j) - s;
+          return m * (N - j) - s;
         }
       }
       --rel_i;
     }
-    return -n * m - 1;
+    return -N * m - 1;
   }
 
   CUDA int min() const {
-    int rel_i = n;
-    for (int j=0; j < n2 ;++j) {
-      if (rel_i == n2) { rel_i = 0; }
+    int rel_i = N;
+    for (int j=0; j < N2 ;++j) {
+      if (rel_i == N2) { rel_i = 0; }
       for (int bit_i=0; bit_i < m;++bit_i) {
         if (set[rel_i] & (1 << bit_i)) {
-          return m * (j - n) + bit_i;
+          return m * (j - N) + bit_i;
         }
       }
       ++rel_i;
     }
-    return n * m;
+    return N * m;
   }
-
-  CUDA int interval() const {
-    int ub, lb;
-    return 0;
-  }
-
 };
 
 #endif

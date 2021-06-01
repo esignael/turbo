@@ -22,51 +22,60 @@
 #include <string>
 #include "bitset.cuh"
 
+struct PartialOrder {
+  static void top();
+  static void bot();
+};
 
-struct Int {
+struct PoInt: PartialOrder {
   // Dummy integer structure for lattice interval class
-  int a;
-  Int (): a(10) {}
-  Int (int a): a(a) {}
+  int element;
+  PoInt () {}
+  PoInt (int element): element(element) {}
+  PoInt (const PoInt& rhs): element(rhs.element) {}
 
-  static int limit_min () {
-    return -100;
+  static int top () {
+    return limit_min();
   }
 
-  static int limit_max () {
-    return 99;
+  static int bot () {
+    return limit_max();
   }
 
-  void join_with (const Int& other) {
-    // TODO \\ change this with ::max<int> or and equiv
-    a = a > other.a ? a: other.a;
+  CUDA void join (const PoInt& other) {
+    element = ::max<int>(element, other.element);
   }
 
-  void meet_with (const Int& other) {
-    // TODO \\ change this with ::min<int> or and equiv
-    a = a > other.a ? other.a: a;
-  }
-
-  CUDA Int join (const Int& other) const {
-    // TODO \\ change this with ::max<int> or and equiv
-    return { a > other.a ? other.a: a };
-  }
-
-  CUDA Int meet (const Int& other) const {
-    // TODO \\ change this with ::min<int> or and equiv
-    return { a > other.a ? a: other.a };
+  CUDA void meet (const PoInt& other) {
+    element = ::min<int>(element, other.element);
   }
   
-  bool operator == (const Int& rhs) const {
-    return a == rhs.a;
+  bool operator == (const PoInt& rhs) const {
+    return element == rhs.element;
   }
 
-  bool operator != (const Int& rhs) const {
-    return a != rhs.a;
+  bool operator != (const PoInt& rhs) const {
+    return element != rhs.element;
   }
 
-  bool operator > (const Int& rhs) const {
-    return a > rhs.a;
+  bool operator > (const PoInt& rhs) const {
+    return element > rhs.element;
+  }
+
+  bool operator < (const PoInt& rhs) const {
+    return rhs > *this;
+  }
+
+  bool operator <= (const PoInt& rhs) const {
+    return !(*this > rhs);
+  }
+
+  bool operator >= (const PoInt& rhs) const {
+    return !(*this < rhs);
+  }
+
+  void print () const {
+    printf("%d\n", element);
   }
 };
 
@@ -76,29 +85,21 @@ struct Set {
 
   CUDA Set<N> (): element() {}
 
-  CUDA static Set<N> limit_max () {
+  CUDA static Set<N> bot () {
     return Bitset<N>::universe();
   }
 
-  CUDA static Set<N> limit_min () {
+  CUDA static Set<N> top () {
     return Bitset<N>::empty();
   }
 
   // Lattice Operations
-  void join_with (const Set<N>& other) {
+  void join (const Set<N>& other) {
     element.intersection_with(other.element);
   }
 
-  void meet_with (const Set<N>& other) {
+  void meet (const Set<N>& other) {
     element.union_with(other.element);
-  }
-
-  Set<N> join (const Set<N>& other) const {
-    return element.set_intersection(other.element);
-  }
-
-  Set<N> meet (const Set<N>& other) const {
-    return element.set_union(other.element);
   }
   // <<<
 
@@ -126,30 +127,22 @@ struct Dual {
   // <<< 
 
   // Static Functions 
-  CUDA static Dual<T> limit_max () {
-    return Dual<T>(T::limit_min());
+  CUDA static Dual<T> bot () {
+    return Dual<T>(T::top());
   }
 
-  CUDA static Dual<T> limit_min () {
-    return Dual<T>(T::limit_max());
+  CUDA static Dual<T> top () {
+    return Dual<T>(T::bot());
   }
   // <<<
 
   // Lattice Operations
-  CUDA void join_with(const Dual<T>& other) {
-    element.meet_with(other.element);
+  CUDA void join (const Dual<T>& other) {
+    element.meet(other.element);
   }
 
-  CUDA void meet_with(const Dual<T>& other) {
-    element.join_with(other.element);
-  }
-
-  CUDA Dual<T> join (const Dual<T>& other) {
-    return { element.meet(other.element) };
-  }
-
-  CUDA Dual<T> meet (const Dual<T>& other) {
-    return { element.join(other.element) };
+  CUDA void meet (const Dual<T>& other) {
+    element.join(other.element);
   }
   // <<<
 
@@ -187,7 +180,7 @@ struct Interval {
   // <<<
 
   // Constructors
-  CUDA Interval(): lb(T::limit_min()), ub(Dual<T>::limit_min()) {}
+  CUDA Interval(): lb(T::top()), ub(Dual<T>::top()) {}
 
   CUDA Interval(T lb, Dual<T> ub): lb(lb), ub(ub) {}
 
@@ -197,8 +190,8 @@ struct Interval {
 
   // Static Functions
   // ASK \\ should this be included?
-  CUDA static Interval<T> limit_max () {
-    return { T::limit_max(), Dual<T>::limit_max() };
+  CUDA static Interval<T> bot () {
+    return { T::bot(), Dual<T>::bot() };
   }
   // <<< 
 
@@ -251,56 +244,187 @@ struct Interval {
 
 };
 
-template <size_t array_size>
-struct SetInterval{
-  Bitset<array_size> lb, ub;
+template <typename T>
+CUDA bool operator < (const T& lhs, const T& rhs) {
+  return rhs > lhs;
+}
 
-  CUDA SetInterval () { ub.complement(); }
+template <typename T>
+CUDA bool operator < (const T& lhs, const Dual<T>& rhs) {
+  return rhs > lhs;
+}
 
-  CUDA SetInterval (const Bitset<array_size> &l, const Bitset<array_size> &u): lb(l), ub(u) {}
+template <typename T>
+CUDA bool operator >= (const T& lhs, const T& rhs) {
+  return !(lhs < rhs);
+}
 
-  CUDA void inplace_join (SetInterval const &other) {
-    lb = lb.set_union(other.lb);
-    ub = ub.set_intersection(other.ub);
+template <typename T>
+class VStore {
+  Array<Interval<T>> data;
+  bool top;
+
+  // The names don't change during solving. We want to avoid useless copies.
+// Unfortunately, static member are not supported in CUDA, so we use an instance variable which is never copied.
+  char** names;
+  size_t names_len;
+public:
+
+  void init_names(std::vector<std::string>& vnames) {
+    names_len = vnames.size();
+    malloc2_managed(names, names_len);
+    for(int i=0; i < names_len; ++i) {
+      int len = vnames[i].size();
+      malloc2_managed(names[i], len + 1);
+      for(int j=0; j < len; ++j) {
+        names[i][j] = vnames[i][j];
+      }
+      names[i][len] = '\0';
+    }
   }
 
-  CUDA bool is_assigned () const {
-    return lb == ub;
+  void free_names() {
+    for(int i = 0; i < names_len; ++i) {
+      free2(names[i]);
+    }
+    free2(names);
   }
 
-  CUDA bool is_top () const {
-    return lb > ub;
+  template<typename Allocator>
+  CUDA VStore(int nvar, Allocator& allocator):
+    data(nvar, allocator), top(false)
+  {}
+
+  template<typename Allocator>
+  CUDA VStore(const VStore& other, Allocator& allocator):
+    data(other.data, allocator),
+    top(false),
+    names(other.names), names_len(other.names_len)
+  {}
+
+  VStore(int nvar): data(nvar), top(false) {}
+  VStore(const VStore& other): data(other.data), top(false),
+    names(other.names), names_len(other.names_len) {}
+
+  VStore(): data(0), top(false) {}
+
+  CUDA void reset(const VStore& other) {
+    assert(size() == other.size());
+    for(int i = 0; i < size(); ++i) {
+      data[i] = other.data[i];
+    }
+    top = other.top;
   }
 
-  CUDA void complement () { 
-    Bitset<array_size> temp = ub.complement();
-    ub = lb.complement();
-    lb = temp;
+  CUDA bool all_assigned() const {
+    for(int i = 0; i < size(); ++i) {
+      if(!data[i].is_assigned()) {
+        return false;
+      }
+    }
+    return true;
   }
 
-  CUDA bool operator == (const SetInterval& other) const {
-    return lb == other.lb && ub.other.ub;
+  CUDA bool is_top() const {
+    return top;
   }
 
-  CUDA bool operator != (const SetInterval& other) const {
-    return lb != other.lb || ub != other.ub;
+  CUDA bool is_top(Var x) const {
+    return data[x].is_top();
   }
 
-  // Temp
+  CUDA const char* name_of(Var x) const {
+    return names[x];
+  }
 
-  CUDA bool update_lb (const Bitset<array_size>& x) {
-    if (lb < x) {
-      lb = x;
+  CUDA void print_var(Var x) const {
+    printf("%s", names[x]);
+  }
+
+  CUDA void print_view(Var* vars) const {
+    for(int i=0; vars[i] != -1; ++i) {
+      print_var(vars[i]);
+      printf(" = ");
+      data[vars[i]].print();
+      printf("\n");
+    }
+  }
+
+  CUDA void print() const {
+    // The first variable is the fake one, c.f. `ModelBuilder` constructor.
+    for(int i=1; i < size(); ++i) {
+      print_var(i);
+      printf(" = ");
+      data[i].print();
+      printf("\n");
+    }
+  }
+
+private:
+
+  CUDA void update_top(Var x) {
+    if(data[x].is_top()) {
+      top = true;
+    }
+  }
+
+public:
+
+  // lb <= x <= ub
+  CUDA void dom(Var x, Interval itv) {
+    data[x] = itv;
+    update_top(x);
+  }
+
+  CUDA bool update_lb(Var i, int lb) {
+    if (data[i].lb < lb) {
+      LOG(printf("Update LB(%s) with %d (old = %d) in %p\n", names[i], lb, data[i].lb, this));
+      data[i].lb = lb;
+      update_top(i);
       return true;
     }
     return false;
   }
 
-  CUDA bool update_lb (int x) {
-    if (lb.contains(x)) { return false; }
-    lb.add(x);
-    return true;
+  CUDA bool update_ub(Var i, int ub) {
+    if (data[i].ub > ub) {
+      LOG(printf("Update UB(%s) with %d (old = %d) in %p\n", names[i], ub, data[i].ub, this));
+      data[i].ub = ub;
+      update_top(i);
+      return true;
+    }
+    return false;
   }
+
+  CUDA bool update(Var i, Interval itv) {
+    bool has_changed = update_lb(i, itv.lb);
+    has_changed |= update_ub(i, itv.ub);
+    return has_changed;
+  }
+
+  CUDA bool assign(Var i, int v) {
+    return update(i, {v, v});
+  }
+
+  
+
+  CUDA Interval& operator[](size_t i) {
+    return data[i];
+  }
+
+  CUDA const Interval& operator[](size_t i) const {
+    return data[i];
+  }
+
+  CUDA int lb(Var i) const {
+    return data[i].lb;
+  }
+
+  CUDA int ub(Var i) const {
+    return data[i].ub;
+  }
+
+  CUDA size_t size() const { return data.size(); }
 };
 
 #endif
